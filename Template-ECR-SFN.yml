@@ -1,0 +1,132 @@
+Description: |
+    ===================================================
+     ============ECR-Scan-Findings-Notifier=======
+    ===================================================
+
+Resources:
+
+  LambdaExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument: 
+        Version: "2012-10-17"
+        Statement: 
+          - 
+            Effect: "Allow"
+            Principal: 
+              Service: 
+                - "lambda.amazonaws.com"
+            Action: 
+              - "sts:AssumeRole"
+      Policies:
+      -
+        PolicyName: "ECRNotifierPolicy"
+        PolicyDocument:
+          Version: "2012-10-17"
+          Statement:
+          -
+            Effect: "Allow"
+            Action: 
+              - "ecr:DescribeImageScanFindings"
+              - "ses:SendEmail"
+            Resource: "*"
+
+
+  ECRSFLFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      Description: Sends Email Notification of the ECR Image Scan Findings
+      FunctionName: Scan-Findings-Notifier
+      Handler: index.lambda_handler
+      MemorySize: 128
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Runtime: python3.8
+      Timeout: 900
+      Code:
+        ZipFile: |
+          import boto3
+          import json
+          import time
+          import botocore
+          
+          def lambda_handler (event, context):
+              # Setting the client for ECR (ecr_client), and for SES (ses_client)
+              ecr_client = boto3.client('ecr')
+              ses_client = boto3.client('ses')
+              
+
+              # Getting information from the event, to use it in the 'describe_image_scan_findings' API request
+              accId = event['account']
+              image = { "imageDigest": event['detail']["image-digest"], "imageTag": event['detail']["image-tags"][0]}
+              repo = event['detail']['repository-name']
+
+              # Initiate the DescribeImageScanFinding request, saving the response as a dictionary
+              response = client.describe_image_scan_findings(
+                  registryId=accId,
+                  repositoryName=repo,
+                  imageId=image,
+                  maxResults=1000
+              )
+
+              # The following loop sending email on each finding, and based on severity
+              for i in response['imageScanFindings']['findings']:
+                  severity = i['severity']
+
+                  if severity in {'MEDIUM','HIGH','CRITICAL'}:
+                    try:
+                      email_subject = 'SECURITY: [{}][{}] ECR Image Scan Finding - {}'.format(event['detail']['repository-name'],i['severity'],i['name']) ])
+                      response = ses_client.send_email(
+                          Destination={
+                              'ToAddresses': [ os.environ['email_to'] ]
+                          },
+                          Message={
+                              'Body': {
+                                  'Text': {
+                                      'Charset': 'UTF-8',
+                                      'Data': json.dumps(i,indent=4)
+                                  }
+                              },
+                              'Subject': {
+                                  'Charset': 'UTF-8',
+                                  'Data': email_subject
+                              }
+                          },
+                          Source='sender@example.com'
+                      )                  
+                      print('Sent email '+ email_subject)
+                    except ClientError:
+                        print("Couldn't send email '+ email_subject)
+                        raise
+
+              print('Sending email(s) for '+ event['detail']["image-digest"]+':'+event['detail']["image-tags"][0]+ ' is complete.')
+      Environment:
+        Variables:
+          email_to: "rolando.casumpang@trustarc.com"
+          email_from: "noreply@trustarc.com"
+          
+  EventTrigger:
+    Type: AWS::Events::Rule
+    Properties:
+      Description: Trigger for the Lambda function (Scan-Findings-Notifier) to execute if a scan is completed
+      EventPattern:
+        source:
+          - "aws.ecr" 
+        detail-type:
+          - "ECR Image Scan" 
+        detail:
+          scan-status:
+            - "COMPLETE"
+
+      State:  "ENABLED"
+      Targets:
+      - 
+        Arn: !GetAtt ECRSFNFunction.Arn
+        Id: Scan-Findings-Logger
+
+  lambdaPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName: !GetAtt ECRSFNFunction.Arn
+      Principal: events.amazonaws.com
+      SourceArn: !GetAtt EventTrigger.Arn
