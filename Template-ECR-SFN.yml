@@ -32,7 +32,7 @@ Resources:
             Resource: "*"
 
 
-  ECRSFLFunction:
+  ECRSFNFunction:
     Type: AWS::Lambda::Function
     Properties:
       Description: Sends Email Notification of the ECR Image Scan Findings
@@ -101,8 +101,9 @@ Resources:
               print('Sending email(s) for '+ event['detail']["image-digest"]+':'+event['detail']["image-tags"][0]+ ' is complete.')
       Environment:
         Variables:
-          email_to: "rolando.casumpang@trustarc.com"
-          email_from: "noreply@trustarc.com"
+          email_to: "to@email.com"
+          email_from: "noreply@email.com"
+          severities: "MEDIUM HIGH CRITICAL"
           
   EventTrigger:
     Type: AWS::Events::Rule
