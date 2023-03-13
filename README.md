@@ -3,7 +3,7 @@
 Steps to create the solution:
 
 1. Download the [Template-ECR-SFN.yml](Template-ECR-SFN.yml) template.
-2. Edit the file and et the following variables
+2. Edit the file and set the following variables
 ```yaml
           email_to: "to@email.com"
           email_from: "noreply@email.com"
